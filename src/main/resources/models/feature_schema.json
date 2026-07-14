@@ -1,0 +1,37 @@
+{
+  "features": [
+    "amount_paid",
+    "below_threshold",
+    "amount_to_avg_ratio",
+    "txn_count",
+    "total_sent",
+    "avg_sent",
+    "std_sent",
+    "min_sent",
+    "max_sent",
+    "unique_beneficiaries",
+    "active_days",
+    "avg_daily_txns",
+    "fan_out_ratio",
+    "payment_formats_used",
+    "recv_count",
+    "total_received",
+    "avg_received",
+    "std_received",
+    "unique_senders",
+    "fan_in_ratio",
+    "receiver_also_sends",
+    "currency_mismatch"
+  ],
+  "feature_count": 22,
+  "model_type": "RandomForestClassifier",
+  "sar_threshold": 10000,
+  "training_rows": 36248,
+  "laundering_rate_train": 0.17363716618847935,
+  "metrics": {
+    "roc_auc": 0.9831510569395172,
+    "true_positives": 5769,
+    "false_positives": 1857,
+    "false_negatives": 315
+  }
+}

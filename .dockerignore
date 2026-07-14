@@ -1,0 +1,21 @@
+# Build output — the image builds the jar itself
+target/
+
+# Git / IDE / OS noise
+.git/
+.gitignore
+.gitattributes
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Docs & specs — not needed in the build context
+*.md
+frontend-spec.md
+create-frontend-guide.md
+mer9ad-code-prompt.md
+
+# Local env / secrets
+.env
+*.log
