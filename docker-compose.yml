@@ -1,0 +1,18 @@
+# Shield Backend — single container with bundled frontend
+#   docker compose up --build
+# Then open http://localhost:8080
+#
+# Set your Groq API key in a .env file or environment:
+#   GROQ_API_KEY=gsk_your_key_here
+services:
+  backend:
+    build: .
+    image: shield-backend
+    ports:
+      - "8080:8080"
+    environment:
+      SHIELD_AI: ${SHIELD_AI:-groq}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+    restart: unless-stopped

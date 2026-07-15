@@ -60,6 +60,8 @@ public class AmlAgent implements Agent {
             5. runAmlClassifier — شغّل نموذج الذكاء الاصطناعي المدرب
             6. getTransactionHistory — راجع سجل المعاملات الكامل
             7. checkFraudIntelLog — تحقق من البلاغات السابقة
+            8. searchLatestAmlTrends — ابحث في الإنترنت عن أحدث طرق غسيل الأموال والأنماط الجديدة
+            9. searchEntityFraudReports — ابحث عن بلاغات عامة عن المستفيد
 
             لا تختلق معلومات. قرارات RED تحتاج نمط محدد موثوق:
             - STRUCTURING (3+ تحويلات صغيرة في نفس اليوم)
@@ -76,18 +78,21 @@ public class AmlAgent implements Agent {
     private final ChatModel chatModel;
     private final AccountStore accountStore;
     private final FraudIntelStore fraudIntel;
+    private final WebSearchTool webSearch;
     private final boolean reasoningEnabled;
 
     public AmlAgent(
             AmlClassifier classifier,
             @Nullable ChatModelHolder modelHolder,
             AccountStore accountStore,
-            FraudIntelStore fraudIntel
+            FraudIntelStore fraudIntel,
+            WebSearchTool webSearch
     ) {
         this.classifier = classifier;
         this.chatModel = modelHolder != null && modelHolder.isEnabled() ? modelHolder.getModel() : null;
         this.accountStore = accountStore;
         this.fraudIntel = fraudIntel;
+        this.webSearch = webSearch;
         this.reasoningEnabled = chatModel != null;
         log.info("AmlAgent active (reasoning={}, harness={})",
                 reasoningEnabled ? "ENABLED" : "DISABLED",
@@ -107,7 +112,8 @@ public class AmlAgent implements Agent {
                 log.info("[AmlAgent] starting agent harness for {}", ctx.eventId());
 
                 AmlTool amlTool = new AmlTool(accountStore, classifier, fraudIntel);
-                AgentHarness harness = new AgentHarness(chatModel, AML_SYSTEM_PROMPT, List.of(amlTool));
+                AgentHarness harness = new AgentHarness(chatModel, AML_SYSTEM_PROMPT,
+                        List.of(amlTool, webSearch));
 
                 AgentTrace trace = harness.run("AmlAgent", task);
                 log.info("[AmlAgent] harness complete: {} steps, {} tool calls, {}ms",

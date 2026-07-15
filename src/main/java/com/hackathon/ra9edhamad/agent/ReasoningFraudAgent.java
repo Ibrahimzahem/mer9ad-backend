@@ -59,6 +59,8 @@ public class ReasoningFraudAgent implements ConversationalAgent {
             5. شغّل نموذج كشف غسيل الأموال (scoreAmlRisk)
             6. تحقق من سجل البلاغات السابقة (checkFraudIntelHistory)
             7. راجع أنماط الاحتيال المعروفة (getKnownScamPatterns)
+            8. ابحث في الإنترنت عن أحدث طرق الاحتيال (searchLatestFraudTrends) — للتحقق من أنماط جديدة
+            9. ابحث عن أي بلاغات عن المستفيد (searchEntityFraudReports)
 
             بعد التحقيق، أعد النتيجة كـ JSON:
             {"decision": "GREEN|ORANGE|RED", "fraudLikelihood": 0.0-1.0,
@@ -73,6 +75,7 @@ public class ReasoningFraudAgent implements ConversationalAgent {
     private final AmlClassifier amlClassifier;
     private final ScamPlaybookStore playbook;
     private final FraudIntelStore fraudIntel;
+    private final WebSearchTool webSearch;
     private final boolean reasoningEnabled;
 
     public ReasoningFraudAgent(
@@ -81,7 +84,8 @@ public class ReasoningFraudAgent implements ConversationalAgent {
             AccountStore accountStore,
             AmlClassifier amlClassifier,
             ScamPlaybookStore playbook,
-            FraudIntelStore fraudIntel
+            FraudIntelStore fraudIntel,
+            WebSearchTool webSearch
     ) {
         this.chatModel = modelHolder != null && modelHolder.isEnabled() ? modelHolder.getModel() : null;
         this.shieldAi = shieldAi;
@@ -89,6 +93,7 @@ public class ReasoningFraudAgent implements ConversationalAgent {
         this.amlClassifier = amlClassifier;
         this.playbook = playbook;
         this.fraudIntel = fraudIntel;
+        this.webSearch = webSearch;
         this.reasoningEnabled = chatModel != null;
         log.info("ReasoningFraudAgent active (reasoning={}, harness={})",
                 reasoningEnabled ? "ENABLED" : "DISABLED",
@@ -121,9 +126,10 @@ public class ReasoningFraudAgent implements ConversationalAgent {
                 String task = buildTransactionDescription(ctx);
                 log.info("[ReasoningFraudAgent] starting agent harness for {}", ctx.eventId());
 
-                // Build the tools
+                // Build the tools — fraud tools + web search for latest trends
                 FraudTool fraudTool = new FraudTool(accountStore, amlClassifier, playbook, fraudIntel);
-                AgentHarness harness = new AgentHarness(chatModel, SYSTEM_PROMPT, List.of(fraudTool));
+                AgentHarness harness = new AgentHarness(chatModel, SYSTEM_PROMPT,
+                        List.of(fraudTool, webSearch));
 
                 // Run the agent — this is the real ReAct loop with visible steps
                 AgentTrace trace = harness.run("FraudAgent", task);
