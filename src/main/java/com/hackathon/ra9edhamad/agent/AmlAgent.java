@@ -241,16 +241,36 @@ public class AmlAgent implements Agent {
         double score = a.launderingScore();
         String pattern = a.launderingPattern() != null ? a.launderingPattern() : "NONE";
 
-        boolean hardFact = decision == Decision.RED
-                && (pattern.contains("STRUCTURING") || pattern.contains("ROUND_TRIPPING"));
+        // Never trust the model's self-reported pattern string alone — re-verify against the
+        // same real signals the deterministic fallback uses before calling anything a hard fact.
+        boolean structuringConfirmed = countSubThresholdToSameBeneficiary(
+                buildSenderHistory(ctx), ctx.transfer().beneficiaryIban(), ctx.transfer().amount()) >= STRUCTURING_COUNT;
+        boolean roundTrippingConfirmed = detectRoundTripping(ctx);
+        boolean rapidTransitConfirmed = ctx.serverFacts().transitVelocity() >= TRANSIT_RATIO;
+        boolean crossBorderConfirmed = countCrossBorder(ctx.customer()) >= 3;
+
+        boolean hardFact = decision == Decision.RED && (structuringConfirmed || roundTrippingConfirmed);
+        double classifierScore = precomputeClassifierScore(ctx);
 
         if (decision == Decision.RED && !hardFact) {
-            double classifierScore = precomputeClassifierScore(ctx);
             if (classifierScore < 0.75) {
-                log.info("[AmlAgent] agent voted RED for {} but no hard pattern + classifier={} → ORANGE",
+                log.info("[AmlAgent] agent voted RED for {} but no confirmed hard pattern + classifier={} → ORANGE",
                         pattern, String.format("%.2f", classifierScore));
                 decision = Decision.ORANGE;
             }
+        }
+
+        // Guardrail: don't let the model hedge to ORANGE/RED when neither the classifier nor any
+        // independently-verified signal actually backs it up (the AML equivalent of the fraud
+        // agent's "client signals alone can't force an escalation" rule).
+        boolean classifierClean = classifierScore >= 0 && classifierScore < CLASSIFIER_ORANGE_THRESHOLD;
+        boolean anyConfirmedSignal = structuringConfirmed || roundTrippingConfirmed
+                || rapidTransitConfirmed || crossBorderConfirmed;
+        if (decision != Decision.GREEN && classifierClean && !anyConfirmedSignal) {
+            log.info("[AmlAgent] agent voted {} but classifier={} and no confirmed AML signal → GREEN (guardrail)",
+                    decision, String.format("%.2f", classifierScore));
+            decision = Decision.GREEN;
+            hardFact = false;
         }
 
         String evidence = a.assessment() != null ? a.assessment() : "تقييم غسيل الأموال غير متاح.";
@@ -275,6 +295,12 @@ public class AmlAgent implements Agent {
         var receiverHistory = buildReceiverHistory(ctx);
         double amount = ctx.transfer().amount();
 
+        // Classifier score is computed up front — RAPID_TRANSIT below needs it to corroborate,
+        // matching the "RAPID_TRANSIT + classifier ≥ 0.75" bar already promised by AML_SYSTEM_PROMPT.
+        boolean receiverAlsoSends = !receiverHistory.isEmpty() && hasOutgoing(ctx.customer(), ctx.transfer().beneficiaryIban());
+        float[] features = AmlFeatures.compute(amount, senderHistory, receiverHistory, receiverAlsoSends, false);
+        double classifierScore = classifier.predictLaundering(features);
+
         // Rule 1: Structuring
         int subThresholdCount = countSubThresholdToSameBeneficiary(senderHistory, ctx.transfer().beneficiaryIban(), amount);
         if (subThresholdCount >= STRUCTURING_COUNT) {
@@ -283,11 +309,14 @@ public class AmlAgent implements Agent {
             log.info("[AmlAgent-fallback] STRUCTURING: {} sub-threshold transfers", subThresholdCount);
         }
 
-        // Rule 2: Rapid transit
-        if (ctx.serverFacts().transitVelocity() >= TRANSIT_RATIO) {
+        // Rule 2: Rapid transit — high velocity alone is not a laundering fact; it only counts
+        // once the trained classifier corroborates it, so a 0%-classifier account can't be
+        // blocked on transit velocity alone.
+        if (ctx.serverFacts().transitVelocity() >= TRANSIT_RATIO && classifierScore >= CLASSIFIER_RED_THRESHOLD) {
             firedRules.add("RAPID_TRANSIT");
             maxScore = Math.max(maxScore, 0.7);
-            log.info("[AmlAgent-fallback] RAPID_TRANSIT: velocity={}", ctx.serverFacts().transitVelocity());
+            log.info("[AmlAgent-fallback] RAPID_TRANSIT confirmed: velocity={} classifier={}",
+                    ctx.serverFacts().transitVelocity(), String.format("%.2f", classifierScore));
         }
 
         // Rule 3: Round-tripping
@@ -303,11 +332,6 @@ public class AmlAgent implements Agent {
             firedRules.add("CROSS_BORDER_VELOCITY");
             maxScore = Math.max(maxScore, Math.min(1.0, 0.4 + crossBorderCount * 0.1));
         }
-
-        // Classifier
-        boolean receiverAlsoSends = !receiverHistory.isEmpty() && hasOutgoing(ctx.customer(), ctx.transfer().beneficiaryIban());
-        float[] features = AmlFeatures.compute(amount, senderHistory, receiverHistory, receiverAlsoSends, false);
-        double classifierScore = classifier.predictLaundering(features);
 
         if (classifierScore >= 0) {
             maxScore = Math.max(maxScore, classifierScore);
