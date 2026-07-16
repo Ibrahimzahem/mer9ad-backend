@@ -120,7 +120,8 @@ public class ReasoningFraudAgent implements ConversationalAgent {
                     "FRAUD_MULE_HARD_FACT");
         }
 
-        // 3. If reasoning is available, run the agent harness (ReAct loop)
+        // 3. If reasoning is available, run the agent harness (ReAct loop), then hand its
+        //    findings to ShieldAi (OpenRouter) for the final judgment.
         if (reasoningEnabled) {
             try {
                 String task = buildTransactionDescription(ctx);
@@ -136,26 +137,20 @@ public class ReasoningFraudAgent implements ConversationalAgent {
                 log.info("[ReasoningFraudAgent] harness complete: {} steps, {} tool calls, {}ms",
                         trace.steps().size(), trace.toolCallsCount(), trace.totalDurationMs());
 
-                // Parse the final answer
                 String finalAnswer = AgentHarness.extractFinalAnswer(trace);
                 FraudAssessment assessment = parseAssessment(finalAnswer);
+                String findings = summarizeFindings(assessment, trace);
 
-                if (assessment != null) {
-                    return mapAssessmentToVerdict(assessment, facts, trace);
-                }
-
-                // If parsing failed but the trace has useful info, use the trace
-                log.warn("[ReasoningFraudAgent] could not parse assessment, using trace evidence");
-                String evidence = extractEvidenceFromTrace(trace);
-                return AgentVerdict.orange(0.6, evidence, "FRAUD_REASONING_PARTIAL", trace);
+                log.info("[ReasoningFraudAgent] handing Groq findings to ShieldAi for final judgment");
+                return judgeWithShieldAi(ctx, facts, trace, findings);
 
             } catch (Exception e) {
                 log.warn("[ReasoningFraudAgent] harness failed, falling back: {}", e.getMessage());
             }
         }
 
-        // 4. Fallback: deterministic triage + ShieldAi
-        return fallbackAssess(ctx, facts);
+        // 4. Fallback: deterministic triage + ShieldAi (no Groq findings available)
+        return judgeWithShieldAi(ctx, facts, null, null);
     }
 
     @Override
@@ -263,54 +258,55 @@ public class ReasoningFraudAgent implements ConversationalAgent {
         return sb.isEmpty() ? "تم التحقيق بواسطة الوكيل." : sb.toString().trim();
     }
 
-    private AgentVerdict mapAssessmentToVerdict(FraudAssessment a, ServerFacts facts, AgentTrace trace) {
-        Decision decision = a.decision();
-        double score = a.fraudLikelihood();
-
-        boolean hardFact = false;
-        if (decision == Decision.RED) {
-            if (facts.muleWatchlistHit()) {
-                hardFact = true;
-            } else if (facts.newAndFastMoving() && score >= 0.75) {
-                hardFact = true;
-            } else {
-                decision = Decision.ORANGE;
-                log.info("[ReasoningFraudAgent] agent voted RED but no hard fact → ORANGE (guardrail)");
+    /** Condenses the Groq harness's findings into a short note handed to ShieldAi/OpenRouter. */
+    private String summarizeFindings(FraudAssessment a, AgentTrace trace) {
+        StringBuilder sb = new StringBuilder();
+        if (trace != null && trace.steps() != null) {
+            List<String> toolsCalled = trace.steps().stream()
+                    .filter(s -> s.type() == AgentStep.Type.TOOL_CALL && s.toolName() != null)
+                    .map(AgentStep::toolName)
+                    .distinct()
+                    .toList();
+            if (!toolsCalled.isEmpty()) {
+                sb.append("Tools investigated: ").append(String.join(", ", toolsCalled)).append("\n");
             }
         }
-
-        String evidence = a.assessment() != null ? a.assessment() : "تقييم الوكيل غير متاح.";
-        String ruleId = "FRAUD_REASONING_AGENT";
-
-        if (decision == Decision.RED && hardFact) {
-            return AgentVerdict.redHard(score, evidence, ruleId, trace);
-        } else if (decision == Decision.GREEN) {
-            return AgentVerdict.green(evidence, ruleId, trace);
+        if (a != null) {
+            sb.append("Agent's own conclusion: ").append(a.decision())
+                    .append(" (likelihood ").append(a.fraudLikelihood()).append(")\n");
+            if (a.reasoning() != null && !a.reasoning().isBlank()) {
+                sb.append("Reasoning: ").append(a.reasoning()).append("\n");
+            }
         } else {
-            return AgentVerdict.orange(score, evidence, ruleId, trace);
+            sb.append("Evidence gathered: ").append(extractEvidenceFromTrace(trace)).append("\n");
         }
+        return sb.toString();
     }
 
-    @SuppressWarnings("unused")
-    private AgentVerdict fallbackAssess(AgentContext ctx, ServerFacts facts) {
+    /**
+     * Judge via ShieldAi (OpenRouter), optionally handed Groq's investigation findings.
+     * {@code trace}/{@code reasoningNotes} are null when reasoning was disabled or the harness failed.
+     */
+    private AgentVerdict judgeWithShieldAi(AgentContext ctx, ServerFacts facts, AgentTrace trace, String reasoningNotes) {
         GroundedContext grounded = new GroundedContext(
                 ctx.customerRef(), ctx.transfer(), ctx.behavioral(), ctx.coercion(),
                 facts, ctx.knownScamPatterns() != null ? ctx.knownScamPatterns() : List.of()
         );
+        String ruleId = reasoningNotes != null ? "FRAUD_REASONING_AGENT" : "FRAUD_FALLBACK";
 
         try {
-            var verdict = shieldAi.judge(grounded);
+            var verdict = shieldAi.judge(grounded, reasoningNotes);
             double likelihood = verdict.fraudLikelihood();
 
             if (verdict.recommendation() == com.hackathon.ra9edhamad.ai.FraudVerdict.Recommendation.ALLOW
                     && likelihood < 0.40) {
-                return AgentVerdict.green(verdict.assessment(), "FRAUD_FALLBACK_ALLOW");
+                return AgentVerdict.green(verdict.assessment(), ruleId + "_ALLOW", trace);
             }
             if (verdict.recommendation() == com.hackathon.ra9edhamad.ai.FraudVerdict.Recommendation.BLOCK
                     && likelihood >= 0.75 && facts.newAndFastMoving()) {
-                return AgentVerdict.redHard(likelihood, verdict.assessment(), "FRAUD_FALLBACK_BLOCK");
+                return AgentVerdict.redHard(likelihood, verdict.assessment(), ruleId + "_BLOCK", trace);
             }
-            return AgentVerdict.orange(likelihood, verdict.assessment(), "FRAUD_FALLBACK_CHALLENGE");
+            return AgentVerdict.orange(likelihood, verdict.assessment(), ruleId + "_CHALLENGE", trace);
         } catch (Exception e) {
             return AgentVerdict.safeDefault();
         }

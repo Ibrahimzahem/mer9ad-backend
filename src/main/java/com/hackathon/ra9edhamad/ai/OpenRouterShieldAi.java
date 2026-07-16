@@ -34,7 +34,9 @@ public class OpenRouterShieldAi implements ShieldAi {
     private static final String JUDGE_SYSTEM = """
             أنت محرك كشف احتيال في بنك. مهمتك تقييم تحويل مالي للكشف عن الهندسة الاجتماعية (الاحتيال بالتحويل المُصرّح به).
             القاعدة الصارمة: استدلّ فقط على "الحقائق المتحقق منها" و"الإشارات" المعطاة في رسالة المستخدم. لا تختلق أي سبب أو معلومة غير موجودة.
-            انتبه لأنماط التلاعب المعروفة المُرفقة. أعد JSON فقط بدون أي نص أو علامات ```، بالشكل التالي تحديدًا:
+            انتبه لأنماط التلاعب المعروفة المُرفقة. قد تُرفق أيضًا "نتائج تحقيق" جمعها وكيل استدلال آخر عبر أدوات فعلية
+            (سجل العميل، قوائم المراقبة، نماذج غسيل الأموال) — اعتبرها أدلة إضافية موثوقة وادمجها في تقييمك النهائي.
+            أعد JSON فقط بدون أي نص أو علامات ```، بالشكل التالي تحديدًا:
             {"fraudLikelihood": <رقم بين 0 و 1>, "assessment": "<شرح موجز بالعربية>", "recommendation": "ALLOW" | "CHALLENGE" | "BLOCK"}
             """;
 
@@ -70,9 +72,18 @@ public class OpenRouterShieldAi implements ShieldAi {
 
     @Override
     public FraudVerdict judge(GroundedContext context) {
-        String user = "الحقائق والإشارات (استدلّ عليها فقط):\n" + context.toCompactJson();
+        return judge(context, null);
+    }
+
+    @Override
+    public FraudVerdict judge(GroundedContext context, String reasoningNotes) {
+        StringBuilder user = new StringBuilder("الحقائق والإشارات (استدلّ عليها فقط):\n")
+                .append(context.toCompactJson());
+        if (reasoningNotes != null && !reasoningNotes.isBlank()) {
+            user.append("\n\nنتائج تحقيق وكيل الاستدلال:\n").append(reasoningNotes);
+        }
         try {
-            String content = chat(JUDGE_SYSTEM, user);
+            String content = chat(JUDGE_SYSTEM, user.toString());
             JsonNode node = MAPPER.readTree(stripFences(content));
             double likelihood = node.path("fraudLikelihood").asDouble(0.5);
             String assessment = node.path("assessment").asText("");

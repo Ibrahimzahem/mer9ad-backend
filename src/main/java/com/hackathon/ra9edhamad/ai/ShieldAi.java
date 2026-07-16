@@ -14,6 +14,15 @@ public interface ShieldAi {
     FraudVerdict judge(GroundedContext context);
 
     /**
+     * Same as {@link #judge(GroundedContext)}, but with findings handed over from an upstream
+     * reasoning/investigation step (e.g. the Groq ReAct agent). Implementations that don't use
+     * a second-stage handoff can ignore {@code reasoningNotes}; the default just delegates.
+     */
+    default FraudVerdict judge(GroundedContext context, String reasoningNotes) {
+        return judge(context);
+    }
+
+    /**
      * Produce the next dialogue turn. {@code latestAnswer} is null for the opening question.
      */
     InterventionTurn intervene(InterventionSession session, String latestAnswer);

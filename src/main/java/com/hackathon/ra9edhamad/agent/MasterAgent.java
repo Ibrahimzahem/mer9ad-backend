@@ -246,7 +246,7 @@ public class MasterAgent {
 
         fraudIntel.add(new FraudIntelRecord(
                 ctx.eventId(), ctx.customerRef(), ctx.transfer().beneficiaryIban(),
-                decision, outcome, snapshot, driver.evidence(), Instant.now()
+                decision, outcome, snapshot, driver.evidence(), Instant.now(), driver.trace()
         ));
         if (decision == Decision.RED) {
             log.info("REPORT-TO-FRAUD-DEPT ref={} customer={} outcome={}", reportRef, ctx.customerRef(), outcome);

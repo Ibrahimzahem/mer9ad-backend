@@ -1,5 +1,7 @@
 package com.hackathon.ra9edhamad.domain;
 
+import com.hackathon.ra9edhamad.agent.AgentTrace;
+
 import java.time.Instant;
 import java.util.Map;
 
@@ -16,6 +18,7 @@ public record FraudIntelRecord(
         String outcome,              // PROCEEDED_SAFE | ABANDONED | BLOCKED | CHALLENGE_FAILED
         Map<String, Object> signalsSnapshot,
         String detectedPattern,      // nullable
-        Instant timestamp
+        Instant timestamp,
+        AgentTrace trace             // the reasoning agent's investigation trace, nullable
 ) {
 }

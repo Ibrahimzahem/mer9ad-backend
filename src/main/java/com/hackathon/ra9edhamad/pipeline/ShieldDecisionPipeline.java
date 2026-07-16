@@ -214,7 +214,7 @@ public class ShieldDecisionPipeline {
                           String outcome, String pattern, Map<String, Object> snapshot) {
         String reportRef = "RPT-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         fraudIntel.add(new FraudIntelRecord(eventId, customerRef, facts.beneficiaryIban(), decision,
-                outcome, snapshot, pattern, Instant.now()));
+                outcome, snapshot, pattern, Instant.now(), null));
         if (decision == Decision.RED) {
             log.info("REPORT-TO-FRAUD-DEPT ref={} customer={} iban={} outcome={}",
                     reportRef, customerRef, facts.beneficiaryIban(), outcome);
