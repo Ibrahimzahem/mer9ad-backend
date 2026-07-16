@@ -19,10 +19,11 @@ public class WebCorsConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")
-                .allowedOrigins("http://localhost:5173", "http://localhost:8080")
-                .allowedMethods("GET", "POST", "OPTIONS")
-                .allowedHeaders("*");
-    }
+        .allowedOrigins("http://localhost:5173", "http://localhost:8080", "https://rased.yasiraloufi.dev")
+        .allowedMethods("GET", "POST", "OPTIONS")
+        .allowedHeaders("*");
+        
+         }
 
     @Override
     public void addViewControllers(ViewControllerRegistry registry) {
