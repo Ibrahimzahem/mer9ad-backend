@@ -22,7 +22,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -224,19 +223,7 @@ public class ShieldDecisionPipeline {
 
     private Map<String, Object> signalsSnapshot(TransferSummary transfer, BehavioralSignals behavioral,
                                                 CoercionSignals coercion, ServerFacts facts) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("amount", transfer.amount());
-        m.put("isNewBeneficiary", transfer.isNewBeneficiary());
-        m.put("purposeEntryMethod", transfer.purposeEntryMethod());
-        m.put("ibanEntryMethod", coercion.ibanEntryMethod());
-        m.put("activeCallDetected", coercion.activeCallDetected());
-        m.put("remoteAccessAppDetected", coercion.remoteAccessAppDetected());
-        m.put("maxIdleGapMs", coercion.maxIdleGapMs());
-        m.put("behavioralScore", behavioral.score());
-        m.put("beneficiaryAccountAgeDays", facts.accountAgeDays());
-        m.put("beneficiaryTransitVelocity", facts.transitVelocity());
-        m.put("muleWatchlistHit", facts.muleWatchlistHit());
-        return m;
+        return com.hackathon.ra9edhamad.domain.SignalsSnapshot.of(transfer, behavioral, coercion, facts);
     }
 
     private Map<String, Object> snapshotFromContext(InterventionSession session) {

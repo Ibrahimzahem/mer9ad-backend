@@ -16,7 +16,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -237,16 +236,19 @@ public class MasterAgent {
     private String report(AgentContext ctx, String decisionId, Decision decision,
                           String outcome, AgentVerdict driver) {
         String reportRef = "RPT-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-        Map<String, Object> snapshot = new LinkedHashMap<>();
-        snapshot.put("amount", ctx.transfer().amount());
-        snapshot.put("beneficiaryIban", ctx.transfer().beneficiaryIban());
+        Map<String, Object> snapshot = com.hackathon.ra9edhamad.domain.SignalsSnapshot.of(
+                ctx.transfer(), ctx.behavioral(), ctx.coercion(), ctx.serverFacts());
         snapshot.put("driverRule", driver.ruleId());
         snapshot.put("driverScore", driver.score());
         snapshot.put("agents", specialistAgents.stream().map(Agent::name).toList());
 
+        List<AgentStepInfo> trace = driver.trace() != null
+                ? driver.trace().steps().stream().map(AgentStepInfo::from).toList()
+                : null;
+
         fraudIntel.add(new FraudIntelRecord(
                 ctx.eventId(), ctx.customerRef(), ctx.transfer().beneficiaryIban(),
-                decision, outcome, snapshot, driver.evidence(), Instant.now(), driver.trace()
+                decision, outcome, snapshot, driver.evidence(), Instant.now(), trace
         ));
         if (decision == Decision.RED) {
             log.info("REPORT-TO-FRAUD-DEPT ref={} customer={} outcome={}", reportRef, ctx.customerRef(), outcome);

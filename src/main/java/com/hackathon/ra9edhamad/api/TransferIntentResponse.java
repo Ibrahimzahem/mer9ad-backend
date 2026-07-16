@@ -2,6 +2,7 @@ package com.hackathon.ra9edhamad.api;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.hackathon.ra9edhamad.agent.Agent;
+import com.hackathon.ra9edhamad.agent.AgentStepInfo;
 import com.hackathon.ra9edhamad.agent.MasterAgent;
 import com.hackathon.ra9edhamad.domain.Decision;
 import com.hackathon.ra9edhamad.pipeline.PipelineResult;
@@ -46,20 +47,6 @@ public record TransferIntentResponse(
                         .toList();
             }
             return new AgentVerdictInfo(agentName, v.decision(), v.score(), v.evidence(), v.ruleId(), traceInfo);
-        }
-    }
-
-    public record AgentStepInfo(
-            int step,
-            String type,
-            String toolName,
-            String toolArguments,
-            String content,
-            long durationMs
-    ) {
-        public static AgentStepInfo from(com.hackathon.ra9edhamad.agent.AgentStep s) {
-            return new AgentStepInfo(s.stepNumber(), s.type().name(), s.toolName(),
-                    s.toolArguments(), s.content(), s.durationMs());
         }
     }
 
