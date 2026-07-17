@@ -19,8 +19,10 @@ import java.time.Duration;
 /**
  * Wires the agent harness. All agents share the SAME chat model (loaded ONCE).
  *
- * <p>Set {@code SHIELD_AI=ollama} for local Ollama, or {@code SHIELD_AI=groq}
- * for Groq's hosted models (OpenAI-compatible, 500 tokens/s, free tier).
+ * <p>Set {@code SHIELD_AI=ollama} for local Ollama, {@code SHIELD_AI=groq}
+ * for Groq's hosted models (OpenAI-compatible, 500 tokens/s, free tier), or
+ * {@code SHIELD_AI=openrouter} to route the ReAct investigator through OpenRouter
+ * instead (same OpenAI-compatible tool-calling protocol, just slower/different model).
  *
  * <p>Agents use the {@link com.hackathon.ra9edhamad.agent.AgentHarness} — a real
  * ReAct loop where the agent plans, calls tools, observes results, and reasons
@@ -48,7 +50,7 @@ public class ReasoningAgentConfig {
     public ChatModelHolder chatModelHolder() {
         String aiChoice = System.getenv("SHIELD_AI");
         if (aiChoice == null || aiChoice.isBlank()) {
-            log.info("Agent harness: DISABLED (set SHIELD_AI=ollama or SHIELD_AI=groq)");
+            log.info("Agent harness: DISABLED (set SHIELD_AI=ollama, SHIELD_AI=groq, or SHIELD_AI=openrouter)");
             return new ChatModelHolder(null, false);
         }
 
@@ -56,8 +58,9 @@ public class ReasoningAgentConfig {
             ChatModel model = switch (aiChoice.toLowerCase()) {
                 case "ollama" -> buildOllamaModel();
                 case "groq" -> buildGroqModel();
+                case "openrouter" -> buildOpenRouterModel();
                 default -> {
-                    log.warn("Unknown SHIELD_AI={} (use 'ollama' or 'groq')", aiChoice);
+                    log.warn("Unknown SHIELD_AI={} (use 'ollama', 'groq', or 'openrouter')", aiChoice);
                     yield null;
                 }
             };
@@ -92,6 +95,22 @@ public class ReasoningAgentConfig {
         log.info("Connecting to Groq (model={})...", model);
         return OpenAiChatModel.builder()
                 .baseUrl("https://api.groq.com/openai/v1")
+                .apiKey(apiKey)
+                .modelName(model)
+                .temperature(0.3)
+                .timeout(Duration.ofSeconds(60))
+                .build();
+    }
+
+    private ChatModel buildOpenRouterModel() {
+        String apiKey = System.getenv("OPENROUTER_API_KEY");
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException("OPENROUTER_API_KEY not set — get one at openrouter.ai/keys");
+        }
+        String model = System.getenv().getOrDefault("OPENROUTER_REASONING_MODEL", "google/gemini-2.5-flash");
+        log.info("Connecting to OpenRouter (model={})...", model);
+        return OpenAiChatModel.builder()
+                .baseUrl("https://openrouter.ai/api/v1")
                 .apiKey(apiKey)
                 .modelName(model)
                 .temperature(0.3)

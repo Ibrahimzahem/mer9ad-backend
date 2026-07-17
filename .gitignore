@@ -31,3 +31,8 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Env ###
+.env
+!.env.example
+!.env.openrouter.example
